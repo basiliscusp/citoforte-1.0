@@ -2,6 +2,9 @@
 
 Questa pagina descrive come installare e avviare CITOFORTE sulla Orange Pi.
 
+- [Manual installation](#manual-installation)
+- [Auto installation](#auto-installation)
+
 ## Manual installation
 
 Questa e la procedura da fare a mano via SSH, passo dopo passo.
