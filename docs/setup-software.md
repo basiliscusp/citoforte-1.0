@@ -58,7 +58,7 @@ citoforte-monitor --auto
 
 Quando colleghi il controller MIDI e premi un tasto, lo script deve stampare a schermo la nota premuta o rilasciata.
 
-## Auto installatione
+## Auto installazione
 
 Questa e la futura installazione automatica da eseguire quando il bootstrap sara completo.
 
