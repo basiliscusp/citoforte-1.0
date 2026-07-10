@@ -1,0 +1,2 @@
+echo "Test bootstrap OK"
+

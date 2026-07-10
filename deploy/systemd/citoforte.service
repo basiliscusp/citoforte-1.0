@@ -1,0 +1,16 @@
+[Unit]
+Description=CITOFORTE MIDI Monitor
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__APP_USER__
+WorkingDirectory=__APP_DIR__
+ExecStart=__APP_DIR__/.venv/bin/citoforte-monitor --auto
+Restart=always
+RestartSec=2
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
