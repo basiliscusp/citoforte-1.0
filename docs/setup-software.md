@@ -2,10 +2,10 @@
 
 Questa pagina descrive come installare e avviare CITOFORTE sulla Orange Pi.
 
-- [Manual installation](#manual-installation)
-- [Auto installation](#auto-installation)
+- [Installazione manuale](#installazione-manuale)
+- [Auto installazione](#auto-installazione)
 
-## Manual installation
+## Installazione manuale
 
 Questa e la procedura da fare a mano via SSH, passo dopo passo.
 
@@ -58,7 +58,7 @@ citoforte-monitor --auto
 
 Quando colleghi il controller MIDI e premi un tasto, lo script deve stampare a schermo la nota premuta o rilasciata.
 
-## Auto installation
+## Auto installatione
 
 Questa e la futura installazione automatica da eseguire quando il bootstrap sara completo.
 
