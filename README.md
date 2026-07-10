@@ -1,50 +1,44 @@
 # CITOFORTE
 
-Base project per Orange Pi Zero (Armbian) per:
-- bootstrap automatico della macchina
-- monitoraggio dispositivi MIDI USB
-- avvio come servizio systemd
+Progetto per Orange Pi Zero su Armbian pensato per ascoltare controller MIDI USB e preparare una base stabile per automazioni future.
 
-## Obiettivi fase 1
+L'idea e semplice:
+- collego un controller MIDI via USB
+- il sistema lo riconosce
+- lo script si mette in ascolto sulla porta MIDI disponibile
+- i messaggi vengono stampati a schermo
 
-- Rilevare controller MIDI USB collegati
-- Intercettare i messaggi in ingresso
-- Stampare a schermo Note On/Off e dati principali
-- Preparare deployment automatico
+## Capitoli
 
-## Struttura
+- [Setup hardware](docs/setup-hardware.md)
+- [Setup software](docs/setup-software.md)
+- [Uso quotidiano](docs/uso.md)
 
-- `scripts/bootstrap_orangepi.sh`: setup completo host + deploy app
-- `scripts/check_system.sh`: diagnostica rapida USB/MIDI
+## Cosa contiene il repository
+
+- `scripts/check_system.sh`: controlli rapidi su USB, ALSA e MIDI
+- `scripts/bootstrap_orangepi.sh`: bootstrap automatico della scheda
 - `src/citoforte/main.py`: entrypoint CLI
-- `src/citoforte/midi/device_watcher.py`: discovery porte MIDI
-- `src/citoforte/midi/monitor.py`: loop lettura messaggi MIDI
-- `deploy/systemd/citoforte.service`: unit file service
+- `src/citoforte/midi/monitor.py`: monitor MIDI ALSA
+- `deploy/systemd/citoforte.service`: avvio automatico con systemd
 
-## Setup locale veloce
+## Stato attuale
 
-1. Installa dipendenze:
-   - `python3 -m venv .venv`
-   - `source .venv/bin/activate`
-   - `pip install -e .`
-2. Avvia monitor:
-   - `citoforte-monitor --auto`
+La prima versione del progetto serve per verificare che:
+- la scheda veda il controller USB
+- ALSA esponga la porta MIDI
+- lo script legga i messaggi correttamente
 
-## Bootstrap su Orange Pi
+## Come partire in breve
 
-Esempio:
+Se hai già clonato il repository, il flusso base è:
 
 ```bash
-sudo bash scripts/bootstrap_orangepi.sh --repo-url https://github.com/<user>/<repo>.git
+cd CITOFORTE
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+citoforte-monitor --auto
 ```
 
-Lo script:
-- installa pacchetti di sistema
-- clona/aggiorna il repository in `/opt/citoforte`
-- crea ambiente virtuale Python
-- installa il progetto
-- installa/abilita il servizio systemd
-
-## Note
-
-Il comportamento in fase iniziale e intenzionalmente semplice: output console per validare hardware e pipeline MIDI prima di introdurre regole applicative.
+Per il bootstrap automatico della macchina, vedi [Setup software](docs/setup-software.md).
