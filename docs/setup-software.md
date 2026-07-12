@@ -18,8 +18,11 @@ sudo apt update
 ### 2. Installare i pacchetti necessari
 
 ```bash
-sudo apt install -y git python3 python3-venv python3-pip alsa-utils usbutils
+sudo apt install -y git python3 python3-venv python3-pip python3-dev \
+	build-essential pkg-config libasound2-dev alsa-utils usbutils
 ```
+
+Questi pacchetti includono gli header ALSA e `pkg-config`, necessari per compilare `python-rtmidi` su ARM.
 
 ### 3. Clonare il repository
 
@@ -48,10 +51,36 @@ source .venv/bin/activate
 pip install -e .
 ```
 
+Se vedi un errore simile a:
+
+```text
+Dependency lookup for alsa with method 'pkg-config' failed
+```
+
+controlla di avere installato `pkg-config` e `libasound2-dev`, poi riprova `pip install -e .`.
+
 ### 7. Avviare il monitor MIDI
 
 ```bash
 citoforte-monitor --auto
+```
+
+All'avvio parte anche la pagina di configurazione runtime:
+
+- `http://<ip-device>:80`
+- `https://<ip-device>:443`
+
+Le modifiche salvate dal form vengono applicate subito e salvate in:
+
+```text
+config/runtime_settings.json
+```
+
+Se il servizio gira come utente non root e non puo fare bind su 80/443,
+usa porte alternative:
+
+```bash
+citoforte-monitor --http-port 8080 --https-port 8443
 ```
 
 ### 8. Verificare il funzionamento

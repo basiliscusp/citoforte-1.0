@@ -10,6 +10,13 @@ source .venv/bin/activate
 citoforte-monitor --auto
 ```
 
+Apri poi la pagina di configurazione da browser:
+
+- `http://<ip-device>:80`
+- `https://<ip-device>:443`
+
+Usa il bottone `Salva` per rendere permanenti le impostazioni e applicarle subito.
+
 ## Aggiornamento dopo un git clone
 
 ```bash

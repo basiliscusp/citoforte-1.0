@@ -20,6 +20,8 @@ L'idea e semplice:
 - `scripts/bootstrap_orangepi.sh`: bootstrap automatico della scheda
 - `src/citoforte/main.py`: entrypoint CLI
 - `src/citoforte/midi/monitor.py`: monitor MIDI ALSA
+- `src/citoforte/web/server.py`: pagina web configurazione (HTTP/HTTPS)
+- `config/runtime_settings.json`: impostazioni persistenti runtime
 - `deploy/systemd/citoforte.service`: avvio automatico con systemd
 
 ## Stato attuale
@@ -39,6 +41,22 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
 citoforte-monitor --auto
+```
+
+## Configurazione web runtime
+
+Quando avvii `citoforte-monitor`, parte anche una pagina web di configurazione:
+
+- HTTP: `http://<ip-dispositivo>:80`
+- HTTPS: `https://<ip-dispositivo>:443`
+
+Le modifiche salvate dalla pagina vengono scritte in `config/runtime_settings.json`
+e applicate subito, senza riavviare il processo.
+
+Se le porte 80/443 sono occupate o non accessibili, puoi cambiarle da CLI:
+
+```bash
+citoforte-monitor --http-port 8080 --https-port 8443
 ```
 
 Per il bootstrap automatico della macchina, vedi [Setup software](docs/setup-software.md).
