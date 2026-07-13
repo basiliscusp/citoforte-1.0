@@ -344,20 +344,15 @@ def _page_html(
           <label for=\"poll_interval_seconds\">Intervallo polling (secondi)</label>
           <input id=\"poll_interval_seconds\" name=\"poll_interval_seconds\" type=\"number\" min=\"0.1\" step=\"0.1\" value=\"{config.poll_interval_seconds}\">
 
-          <div class=\"row\">
-            <input id=\"auto_discover\" name=\"auto_discover\" type=\"checkbox\" {'checked' if config.auto_discover else ''}>
-            <label for=\"auto_discover\" style=\"margin:0;\">Auto-discovery porte</label>
-          </div>
-
           <div class=\"controller-mode\">
             <label class=\"toggle-button\" for=\"controller_auto\">
-              <input id=\"controller_auto\" name=\"controller_auto\" type=\"checkbox\" {'checked' if not config.selected_device_name else ''}>
+              <input id=\"controller_auto\" name=\"controller_auto\" type=\"checkbox\" {'checked' if config.selected_device_name is None else ''}>
               <span>Auto</span>
             </label>
 
-            <div id=\"controller-summary\" class=\"controller-summary {'hidden' if config.selected_device_name else ''}\">{html.escape(controller_label)}</div>
+            <div id=\"controller-summary\" class=\"controller-summary {'hidden' if config.selected_device_name is not None else ''}\">{html.escape(controller_label)}</div>
 
-            <div id=\"controller-manual-block\" class={'hidden' if not config.selected_device_name else ''}>
+            <div id=\"controller-manual-block\" class={'hidden' if config.selected_device_name is None else ''}>
               <label for=\"selected_device_name\">Controller MIDI</label>
               <select id=\"selected_device_name\" name=\"selected_device_name\">
                 {''.join(device_options)}
@@ -468,7 +463,7 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
             if poll_interval_seconds <= 0:
                 poll_interval_seconds = 2.0
 
-            auto_discover = "auto_discover" in form
+            auto_discover = controller_auto
             octave_mapping_mode = form.get("octave_mapping_mode", ["controller_octave"])[0]
             if octave_mapping_mode not in {"controller_octave", "fold_all_octaves"}:
                 octave_mapping_mode = "controller_octave"
