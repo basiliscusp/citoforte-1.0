@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import importlib
 import shutil
 import ssl
 import subprocess
@@ -10,8 +11,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
-import rtmidi
-
 from citoforte.config import MonitorConfig
 from citoforte.runtime_settings import RuntimeSettingsStore
 
@@ -20,21 +19,26 @@ NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
 def _list_midi_input_ports() -> list[str]:
-  midi_in: rtmidi.MidiIn | None = None
-  try:
-    midi_in = rtmidi.MidiIn(rtmidi.API_LINUX_ALSA)
-  except Exception:
     try:
-      midi_in = rtmidi.MidiIn()
-    except Exception:
-      return []
+        rtmidi = importlib.import_module("rtmidi")
+    except ImportError:
+        return []
 
-  try:
-    return midi_in.get_ports()
-  except Exception:
-    return []
-  finally:
-    del midi_in
+    midi_in: object | None = None
+    try:
+        midi_in = rtmidi.MidiIn(rtmidi.API_LINUX_ALSA)
+    except Exception:
+        try:
+            midi_in = rtmidi.MidiIn()
+        except Exception:
+            return []
+
+    try:
+        return midi_in.get_ports()
+    except Exception:
+        return []
+    finally:
+        del midi_in
 
 
 def _generate_self_signed_cert(cert_path: Path, key_path: Path) -> bool:
@@ -71,74 +75,74 @@ def _generate_self_signed_cert(cert_path: Path, key_path: Path) -> bool:
 
 
 def _page_html(
-  config: MonitorConfig,
-  settings_path: Path,
-  available_ports: list[str],
-  message: str = "",
+    config: MonitorConfig,
+    settings_path: Path,
+    available_ports: list[str],
+    message: str = "",
 ) -> str:
     escaped_hint = html.escape(config.device_name_hint or "", quote=True)
     escaped_settings_path = html.escape(str(settings_path), quote=True)
-  escaped_selected = html.escape(config.selected_device_name or "", quote=True)
+    escaped_selected = html.escape(config.selected_device_name or "", quote=True)
 
-  device_options = ['<option value="">Auto / nessuna selezione fissa</option>']
-  for port_name in available_ports:
-    escaped_name = html.escape(port_name, quote=True)
-    selected_attr = ""
-    if config.selected_device_name and port_name == config.selected_device_name:
-      selected_attr = " selected"
-    device_options.append(
-      f'<option value="{escaped_name}"{selected_attr}>{escaped_name}</option>'
-    )
+    device_options = ['<option value="">Auto / nessuna selezione fissa</option>']
+    for port_name in available_ports:
+        escaped_name = html.escape(port_name, quote=True)
+        selected_attr = ""
+        if config.selected_device_name and port_name == config.selected_device_name:
+            selected_attr = " selected"
+        device_options.append(
+            f'<option value="{escaped_name}"{selected_attr}>{escaped_name}</option>'
+        )
 
-  if config.selected_device_name and config.selected_device_name not in available_ports:
-    device_options.append(
-      f'<option value="{escaped_selected}" selected>{escaped_selected} (non connesso)</option>'
-    )
+    if config.selected_device_name and config.selected_device_name not in available_ports:
+        device_options.append(
+            f'<option value="{escaped_selected}" selected>{escaped_selected} (non connesso)</option>'
+        )
 
-  note_options = []
-  for idx, note_name in enumerate(NOTE_NAMES):
-    selected_attr = " selected" if idx == config.instrument_start_note else ""
-    note_options.append(f'<option value="{idx}"{selected_attr}>{note_name}</option>')
+    note_options = []
+    for idx, note_name in enumerate(NOTE_NAMES):
+        selected_attr = " selected" if idx == config.instrument_start_note else ""
+        note_options.append(f'<option value="{idx}"{selected_attr}>{note_name}</option>')
 
-  mapping_options = [
-    (
-      "controller_octave",
-      "Usa solo una ottava specifica del controller",
-      "Le note fuori da quella ottava vengono ignorate.",
-    ),
-    (
-      "fold_all_octaves",
-      "Comprimi tutte le ottave in un'unica ottava",
-      "Ogni C del controller suona la stessa nota base dello strumento.",
-    ),
-  ]
+    mapping_options = [
+        (
+            "controller_octave",
+            "Usa solo una ottava specifica del controller",
+            "Le note fuori da quella ottava vengono ignorate.",
+        ),
+        (
+            "fold_all_octaves",
+            "Comprimi tutte le ottave in un'unica ottava",
+            "Ogni C del controller suona la stessa nota base dello strumento.",
+        ),
+    ]
 
-  mapping_rows = []
-  for value, title, subtitle in mapping_options:
-    checked = " checked" if config.octave_mapping_mode == value else ""
-    mapping_rows.append(
-      f"""
-      <label class=\"radio-card\">
-        <input type=\"radio\" name=\"octave_mapping_mode\" value=\"{value}\"{checked}>
-        <div>
-        <strong>{title}</strong>
-        <span>{subtitle}</span>
-        </div>
-      </label>
-      """
-    )
+    mapping_rows = []
+    for value, title, subtitle in mapping_options:
+        checked = " checked" if config.octave_mapping_mode == value else ""
+        mapping_rows.append(
+            f"""
+            <label class=\"radio-card\">
+              <input type=\"radio\" name=\"octave_mapping_mode\" value=\"{value}\"{checked}>
+              <div>
+                <strong>{title}</strong>
+                <span>{subtitle}</span>
+              </div>
+            </label>
+            """
+        )
 
-  ports_status = "Nessun dispositivo MIDI rilevato al momento."
-  if available_ports:
-    ports_status = f"Dispositivi MIDI rilevati: {len(available_ports)}"
+    ports_status = "Nessun dispositivo MIDI rilevato al momento."
+    if available_ports:
+        ports_status = f"Dispositivi MIDI rilevati: {len(available_ports)}"
 
     message_box = ""
     if message:
-    message_box = (
-      "<div class=\"notice\">"
-      f"{html.escape(message)}"
-      "</div>"
-    )
+        message_box = (
+            "<div class=\"notice\">"
+            f"{html.escape(message)}"
+            "</div>"
+        )
 
     return f"""<!doctype html>
 <html lang=\"it\">
@@ -353,8 +357,8 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
                 return
 
             current = store.refresh_if_changed()
-          available_ports = _list_midi_input_ports()
-          body = _page_html(current, store.settings_path, available_ports).encode("utf-8")
+            available_ports = _list_midi_input_ports()
+            body = _page_html(current, store.settings_path, available_ports).encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -372,7 +376,7 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
 
             device_name_hint = (form.get("device_name_hint", [""])[0] or "").strip() or None
             selected_device_name = (
-              (form.get("selected_device_name", [""])[0] or "").strip() or None
+                (form.get("selected_device_name", [""])[0] or "").strip() or None
             )
 
             try:
@@ -386,14 +390,14 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
             auto_discover = "auto_discover" in form
             octave_mapping_mode = form.get("octave_mapping_mode", ["controller_octave"])[0]
             if octave_mapping_mode not in {"controller_octave", "fold_all_octaves"}:
-              octave_mapping_mode = "controller_octave"
+                octave_mapping_mode = "controller_octave"
 
             def _to_int(key: str, fallback: int, min_value: int, max_value: int) -> int:
-              try:
-                parsed = int(form.get(key, [str(fallback)])[0])
-              except ValueError:
-                parsed = fallback
-              return max(min_value, min(max_value, parsed))
+                try:
+                    parsed = int(form.get(key, [str(fallback)])[0])
+                except ValueError:
+                    parsed = fallback
+                return max(min_value, min(max_value, parsed))
 
             controller_octave = _to_int("controller_octave", 4, -1, 9)
             instrument_octave = _to_int("instrument_octave", 4, -1, 9)
@@ -403,23 +407,22 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
             saved = store.save(
                 MonitorConfig(
                     device_name_hint=device_name_hint,
-                selected_device_name=selected_device_name,
+                    selected_device_name=selected_device_name,
                     auto_discover=auto_discover,
                     poll_interval_seconds=poll_interval_seconds,
-                octave_mapping_mode=octave_mapping_mode,
-                controller_octave=controller_octave,
-                instrument_octave=instrument_octave,
-                instrument_start_note=instrument_start_note,
-                note_offset_semitones=note_offset_semitones,
+                    octave_mapping_mode=octave_mapping_mode,
+                    controller_octave=controller_octave,
+                    instrument_octave=instrument_octave,
+                    instrument_start_note=instrument_start_note,
+                    note_offset_semitones=note_offset_semitones,
                 )
             )
 
             available_ports = _list_midi_input_ports()
-
             body = _page_html(
                 saved,
                 store.settings_path,
-              available_ports,
+                available_ports,
                 message="Configurazione salvata e applicata immediatamente.",
             ).encode("utf-8")
             self.send_response(HTTPStatus.OK)
