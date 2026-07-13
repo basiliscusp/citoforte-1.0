@@ -10,8 +10,31 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
+import rtmidi
+
 from citoforte.config import MonitorConfig
 from citoforte.runtime_settings import RuntimeSettingsStore
+
+
+NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def _list_midi_input_ports() -> list[str]:
+  midi_in: rtmidi.MidiIn | None = None
+  try:
+    midi_in = rtmidi.MidiIn(rtmidi.API_LINUX_ALSA)
+  except Exception:
+    try:
+      midi_in = rtmidi.MidiIn()
+    except Exception:
+      return []
+
+  try:
+    return midi_in.get_ports()
+  except Exception:
+    return []
+  finally:
+    del midi_in
 
 
 def _generate_self_signed_cert(cert_path: Path, key_path: Path) -> bool:
@@ -47,12 +70,75 @@ def _generate_self_signed_cert(cert_path: Path, key_path: Path) -> bool:
     return cert_path.exists() and key_path.exists()
 
 
-def _page_html(config: MonitorConfig, settings_path: Path, message: str = "") -> str:
+def _page_html(
+  config: MonitorConfig,
+  settings_path: Path,
+  available_ports: list[str],
+  message: str = "",
+) -> str:
     escaped_hint = html.escape(config.device_name_hint or "", quote=True)
     escaped_settings_path = html.escape(str(settings_path), quote=True)
+  escaped_selected = html.escape(config.selected_device_name or "", quote=True)
+
+  device_options = ['<option value="">Auto / nessuna selezione fissa</option>']
+  for port_name in available_ports:
+    escaped_name = html.escape(port_name, quote=True)
+    selected_attr = ""
+    if config.selected_device_name and port_name == config.selected_device_name:
+      selected_attr = " selected"
+    device_options.append(
+      f'<option value="{escaped_name}"{selected_attr}>{escaped_name}</option>'
+    )
+
+  if config.selected_device_name and config.selected_device_name not in available_ports:
+    device_options.append(
+      f'<option value="{escaped_selected}" selected>{escaped_selected} (non connesso)</option>'
+    )
+
+  note_options = []
+  for idx, note_name in enumerate(NOTE_NAMES):
+    selected_attr = " selected" if idx == config.instrument_start_note else ""
+    note_options.append(f'<option value="{idx}"{selected_attr}>{note_name}</option>')
+
+  mapping_options = [
+    (
+      "controller_octave",
+      "Usa solo una ottava specifica del controller",
+      "Le note fuori da quella ottava vengono ignorate.",
+    ),
+    (
+      "fold_all_octaves",
+      "Comprimi tutte le ottave in un'unica ottava",
+      "Ogni C del controller suona la stessa nota base dello strumento.",
+    ),
+  ]
+
+  mapping_rows = []
+  for value, title, subtitle in mapping_options:
+    checked = " checked" if config.octave_mapping_mode == value else ""
+    mapping_rows.append(
+      f"""
+      <label class=\"radio-card\">
+        <input type=\"radio\" name=\"octave_mapping_mode\" value=\"{value}\"{checked}>
+        <div>
+        <strong>{title}</strong>
+        <span>{subtitle}</span>
+        </div>
+      </label>
+      """
+    )
+
+  ports_status = "Nessun dispositivo MIDI rilevato al momento."
+  if available_ports:
+    ports_status = f"Dispositivi MIDI rilevati: {len(available_ports)}"
+
     message_box = ""
     if message:
-        message_box = f'<div style="padding:10px;border-radius:8px;background:#dff6dd;color:#1b4332;margin-bottom:16px;">{html.escape(message)}</div>'
+    message_box = (
+      "<div class=\"notice\">"
+      f"{html.escape(message)}"
+      "</div>"
+    )
 
     return f"""<!doctype html>
 <html lang=\"it\">
@@ -64,6 +150,7 @@ def _page_html(config: MonitorConfig, settings_path: Path, message: str = "") ->
     :root {{
       --bg: #f4f8fb;
       --card: #ffffff;
+      --surface: #f8fafc;
       --text: #16324f;
       --accent: #0f766e;
       --accent-hover: #115e59;
@@ -82,7 +169,7 @@ def _page_html(config: MonitorConfig, settings_path: Path, message: str = "") ->
       box-sizing: border-box;
     }}
     .card {{
-      width: min(560px, 100%);
+      width: min(840px, 100%);
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 14px;
@@ -119,6 +206,64 @@ def _page_html(config: MonitorConfig, settings_path: Path, message: str = "") ->
       gap: 10px;
       margin-top: 14px;
     }}
+    .grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }}
+    .section {{
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }}
+    .section h2 {{
+      margin: 0 0 6px;
+      font-size: 1.05rem;
+    }}
+    .section p {{
+      margin-bottom: 12px;
+      font-size: 0.92rem;
+    }}
+    .notice {{
+      padding: 10px;
+      border-radius: 8px;
+      background: #dff6dd;
+      color: #1b4332;
+      margin-bottom: 16px;
+    }}
+    .radio-card {{
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      background: #fff;
+    }}
+    .radio-card span {{
+      display: block;
+      color: var(--muted);
+      font-size: 0.86rem;
+      margin-top: 2px;
+      font-weight: 400;
+    }}
+    select {{
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 1rem;
+      background: #fff;
+    }}
+    .muted-line {{
+      margin-top: 8px;
+      margin-bottom: 0;
+      font-size: 0.86rem;
+      color: var(--muted);
+    }}
     .button {{
       margin-top: 18px;
       border: 0;
@@ -146,15 +291,49 @@ def _page_html(config: MonitorConfig, settings_path: Path, message: str = "") ->
     <p>Le modifiche vengono salvate in modo permanente e applicate subito anche durante l'esecuzione.</p>
     {message_box}
     <form method=\"post\" action=\"/save\">
-      <label for=\"device_name_hint\">Filtro dispositivo (substring)</label>
-      <input id=\"device_name_hint\" name=\"device_name_hint\" type=\"text\" placeholder=\"es. keystation\" value=\"{escaped_hint}\">
+      <div class=\"grid\">
+        <section class=\"section\">
+          <h2>Settaggi tecnici</h2>
+          <p>Selezione del controller e comportamento di discovery.</p>
 
-      <label for=\"poll_interval_seconds\">Intervallo polling (secondi)</label>
-      <input id=\"poll_interval_seconds\" name=\"poll_interval_seconds\" type=\"number\" min=\"0.1\" step=\"0.1\" value=\"{config.poll_interval_seconds}\">
+          <label for=\"poll_interval_seconds\">Intervallo polling (secondi)</label>
+          <input id=\"poll_interval_seconds\" name=\"poll_interval_seconds\" type=\"number\" min=\"0.1\" step=\"0.1\" value=\"{config.poll_interval_seconds}\">
 
-      <div class=\"row\">
-        <input id=\"auto_discover\" name=\"auto_discover\" type=\"checkbox\" {'checked' if config.auto_discover else ''}>
-        <label for=\"auto_discover\" style=\"margin:0;\">Auto-discovery porte</label>
+          <div class=\"row\">
+            <input id=\"auto_discover\" name=\"auto_discover\" type=\"checkbox\" {'checked' if config.auto_discover else ''}>
+            <label for=\"auto_discover\" style=\"margin:0;\">Auto-discovery porte</label>
+          </div>
+
+          <label for=\"selected_device_name\">Controller MIDI (selezione manuale)</label>
+          <select id=\"selected_device_name\" name=\"selected_device_name\">
+            {''.join(device_options)}
+          </select>
+          <p class=\"muted-line\">{html.escape(ports_status)}</p>
+
+          <label for=\"device_name_hint\">Filtro nome dispositivo (substring)</label>
+          <input id=\"device_name_hint\" name=\"device_name_hint\" type=\"text\" placeholder=\"es. keystation\" value=\"{escaped_hint}\">
+        </section>
+
+        <section class=\"section\">
+          <h2>Impostazioni di esecuzione</h2>
+          <p>Mapping ottave/note per adattare il controller allo strumento.</p>
+
+          {''.join(mapping_rows)}
+
+          <label for=\"controller_octave\">Ottava controller usata (solo modalita ottava singola)</label>
+          <input id=\"controller_octave\" name=\"controller_octave\" type=\"number\" min=\"-1\" max=\"9\" step=\"1\" value=\"{config.controller_octave}\">
+
+          <label for=\"instrument_octave\">Ottava strumento (destinazione)</label>
+          <input id=\"instrument_octave\" name=\"instrument_octave\" type=\"number\" min=\"-1\" max=\"9\" step=\"1\" value=\"{config.instrument_octave}\">
+
+          <label for=\"instrument_start_note\">Nota di inizio dell'ottava strumento</label>
+          <select id=\"instrument_start_note\" name=\"instrument_start_note\">
+            {''.join(note_options)}
+          </select>
+
+          <label for=\"note_offset_semitones\">Offset semitoni (es. C -> E = +4)</label>
+          <input id=\"note_offset_semitones\" name=\"note_offset_semitones\" type=\"number\" min=\"-24\" max=\"24\" step=\"1\" value=\"{config.note_offset_semitones}\">
+        </section>
       </div>
 
       <button class=\"button\" type=\"submit\">Salva</button>
@@ -174,7 +353,8 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
                 return
 
             current = store.refresh_if_changed()
-            body = _page_html(current, store.settings_path).encode("utf-8")
+          available_ports = _list_midi_input_ports()
+          body = _page_html(current, store.settings_path, available_ports).encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -191,6 +371,9 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
             form = parse_qs(payload, keep_blank_values=True)
 
             device_name_hint = (form.get("device_name_hint", [""])[0] or "").strip() or None
+            selected_device_name = (
+              (form.get("selected_device_name", [""])[0] or "").strip() or None
+            )
 
             try:
                 poll_interval_seconds = float(form.get("poll_interval_seconds", ["2.0"])[0])
@@ -201,18 +384,42 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
                 poll_interval_seconds = 2.0
 
             auto_discover = "auto_discover" in form
+            octave_mapping_mode = form.get("octave_mapping_mode", ["controller_octave"])[0]
+            if octave_mapping_mode not in {"controller_octave", "fold_all_octaves"}:
+              octave_mapping_mode = "controller_octave"
+
+            def _to_int(key: str, fallback: int, min_value: int, max_value: int) -> int:
+              try:
+                parsed = int(form.get(key, [str(fallback)])[0])
+              except ValueError:
+                parsed = fallback
+              return max(min_value, min(max_value, parsed))
+
+            controller_octave = _to_int("controller_octave", 4, -1, 9)
+            instrument_octave = _to_int("instrument_octave", 4, -1, 9)
+            instrument_start_note = _to_int("instrument_start_note", 0, 0, 11)
+            note_offset_semitones = _to_int("note_offset_semitones", 0, -24, 24)
 
             saved = store.save(
                 MonitorConfig(
                     device_name_hint=device_name_hint,
+                selected_device_name=selected_device_name,
                     auto_discover=auto_discover,
                     poll_interval_seconds=poll_interval_seconds,
+                octave_mapping_mode=octave_mapping_mode,
+                controller_octave=controller_octave,
+                instrument_octave=instrument_octave,
+                instrument_start_note=instrument_start_note,
+                note_offset_semitones=note_offset_semitones,
                 )
             )
+
+            available_ports = _list_midi_input_ports()
 
             body = _page_html(
                 saved,
                 store.settings_path,
+              available_ports,
                 message="Configurazione salvata e applicata immediatamente.",
             ).encode("utf-8")
             self.send_response(HTTPStatus.OK)

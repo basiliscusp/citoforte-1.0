@@ -21,7 +21,40 @@ def _hex_bytes(values: list[int]) -> str:
     return " ".join(f"{value:02X}" for value in values)
 
 
-def _format_midi_message(midi_bytes: list[int]) -> str | None:
+def _clamp_midi_note(value: int) -> int:
+    return max(0, min(127, value))
+
+
+def _remap_note(note: int, config: MonitorConfig) -> int | None:
+    if config.octave_mapping_mode == "controller_octave":
+        source_octave_start = (config.controller_octave + 1) * 12
+        source_offset = note - source_octave_start
+        if source_offset < 0 or source_offset > 11:
+            return None
+    else:
+        source_offset = note % 12
+
+    target_octave_start = (config.instrument_octave + 1) * 12
+    mapped = (
+        target_octave_start
+        + config.instrument_start_note
+        + source_offset
+        + config.note_offset_semitones
+    )
+    return _clamp_midi_note(mapped)
+
+
+def _format_note_mapping(note: int, config: MonitorConfig) -> str:
+    mapped = _remap_note(note, config)
+    original_label = _note_label(note)
+    if mapped is None:
+        return f"{note} ({original_label}) -> ignorata"
+
+    mapped_label = _note_label(mapped)
+    return f"{note} ({original_label}) -> {mapped} ({mapped_label})"
+
+
+def _format_midi_message(midi_bytes: list[int], config: MonitorConfig) -> str | None:
     if not midi_bytes:
         return None
 
@@ -34,18 +67,18 @@ def _format_midi_message(midi_bytes: list[int]) -> str | None:
         channel = (status & 0x0F) + 1
 
         if message_type == 0x80 and data1 is not None and data2 is not None:
-            note_name = _note_label(data1)
-            return f"NOTE_OFF ch={channel} note={data1} ({note_name}) velocity={data2}"
+            mapped_label = _format_note_mapping(data1, config)
+            return f"NOTE_OFF ch={channel} note={mapped_label} velocity={data2}"
 
         if message_type == 0x90 and data1 is not None and data2 is not None:
-            note_name = _note_label(data1)
+            mapped_label = _format_note_mapping(data1, config)
             if data2 == 0:
-                return f"NOTE_OFF ch={channel} note={data1} ({note_name}) velocity=0"
-            return f"NOTE_ON ch={channel} note={data1} ({note_name}) velocity={data2}"
+                return f"NOTE_OFF ch={channel} note={mapped_label} velocity=0"
+            return f"NOTE_ON ch={channel} note={mapped_label} velocity={data2}"
 
         if message_type == 0xA0 and data1 is not None and data2 is not None:
-            note_name = _note_label(data1)
-            return f"POLY_AFTERTOUCH ch={channel} note={data1} ({note_name}) pressure={data2}"
+            mapped_label = _format_note_mapping(data1, config)
+            return f"POLY_AFTERTOUCH ch={channel} note={mapped_label} pressure={data2}"
 
         if message_type == 0xB0 and data1 is not None and data2 is not None:
             return f"CONTROL_CHANGE ch={channel} cc={data1} value={data2}"
@@ -100,12 +133,25 @@ def _format_midi_message(midi_bytes: list[int]) -> str | None:
     return f"SYSTEM_MSG status=0x{status:02X} data=[{_hex_bytes(midi_bytes[1:])}]"
 
 
-def _pick_port_index(ports: list[str], device_name_hint: str | None) -> int:
+def _pick_port_index(ports: list[str], config: MonitorConfig) -> int:
     if not ports:
         raise ValueError("Lista porte vuota")
 
-    if device_name_hint:
-        hint = device_name_hint.lower()
+    if config.selected_device_name:
+        selected_lower = config.selected_device_name.lower()
+        for idx, name in enumerate(ports):
+            if name.lower() == selected_lower:
+                return idx
+
+        for idx, name in enumerate(ports):
+            if selected_lower in name.lower():
+                return idx
+
+        if not config.auto_discover:
+            raise ValueError(f"Dispositivo selezionato non trovato: {config.selected_device_name}")
+
+    if config.device_name_hint:
+        hint = config.device_name_hint.lower()
         for idx, name in enumerate(ports):
             lowered = name.lower()
             if hint in lowered and "midi through" not in lowered:
@@ -130,7 +176,13 @@ def _wait_for_first_alsa_port(config: MonitorConfig) -> tuple[rtmidi.MidiIn, int
         ports = midi_in.get_ports()
 
         if ports:
-            selected_index = _pick_port_index(ports, config.device_name_hint)
+            try:
+                selected_index = _pick_port_index(ports, config)
+            except ValueError as exc:
+                print(f"{exc}. Riprovo...")
+                time.sleep(config.poll_interval_seconds)
+                continue
+
             selected_name = ports[selected_index]
             print(f"Controller MIDI trovati: {ports}")
             print(f"Uso la porta selezionata: {selected_name}")
@@ -171,7 +223,7 @@ def run_monitor(
                     continue
 
                 midi_bytes, delta_time = message
-                formatted = _format_midi_message(midi_bytes)
+                formatted = _format_midi_message(midi_bytes, active_config)
                 if formatted is None:
                     continue
 

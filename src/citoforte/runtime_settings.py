@@ -64,17 +64,61 @@ class RuntimeSettingsStore:
         except (OSError, json.JSONDecodeError):
             return None
 
+        def _to_int(value: object, fallback: int, min_value: int, max_value: int) -> int:
+            try:
+                parsed = int(value)
+            except (TypeError, ValueError):
+                return fallback
+            return max(min_value, min(max_value, parsed))
+
         normalized_poll = float(payload.get("poll_interval_seconds", self._config.poll_interval_seconds))
         if normalized_poll <= 0:
             normalized_poll = self._config.poll_interval_seconds
+
+        raw_selected = payload.get("selected_device_name")
+        selected_device_name: str | None
+        if isinstance(raw_selected, str):
+            selected_device_name = raw_selected.strip() or None
+        else:
+            selected_device_name = None
+
+        raw_mode = payload.get("octave_mapping_mode", self._config.octave_mapping_mode)
+        if raw_mode not in {"controller_octave", "fold_all_octaves"}:
+            raw_mode = self._config.octave_mapping_mode
 
         stat = self._settings_path.stat()
         self._mtime_ns = stat.st_mtime_ns
 
         return MonitorConfig(
             device_name_hint=payload.get("device_name_hint") or None,
+            selected_device_name=selected_device_name,
             auto_discover=bool(payload.get("auto_discover", self._config.auto_discover)),
             poll_interval_seconds=normalized_poll,
+            octave_mapping_mode=raw_mode,
+            controller_octave=_to_int(
+                payload.get("controller_octave"),
+                self._config.controller_octave,
+                -1,
+                9,
+            ),
+            instrument_octave=_to_int(
+                payload.get("instrument_octave"),
+                self._config.instrument_octave,
+                -1,
+                9,
+            ),
+            instrument_start_note=_to_int(
+                payload.get("instrument_start_note"),
+                self._config.instrument_start_note,
+                0,
+                11,
+            ),
+            note_offset_semitones=_to_int(
+                payload.get("note_offset_semitones"),
+                self._config.note_offset_semitones,
+                -24,
+                24,
+            ),
         )
 
     def _write_unlocked(self, config: MonitorConfig) -> None:
