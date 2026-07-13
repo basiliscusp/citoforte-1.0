@@ -123,7 +123,7 @@ def _page_html(
         mapping_rows.append(
             f"""
             <label class=\"radio-card\">
-              <input type=\"radio\" name=\"octave_mapping_mode\" value=\"{value}\"{checked}>
+              <input class=\"mapping-mode-radio\" type=\"radio\" name=\"octave_mapping_mode\" value=\"{value}\"{checked}>
               <div>
                 <strong>{title}</strong>
                 <span>{subtitle}</span>
@@ -135,6 +135,14 @@ def _page_html(
     ports_status = "Nessun dispositivo MIDI rilevato al momento."
     if available_ports:
         ports_status = f"Dispositivi MIDI rilevati: {len(available_ports)}"
+
+    controller_label = "Nessun controller MIDI disponibile"
+    if config.selected_device_name:
+      controller_label = f"Controller selezionato: {config.selected_device_name}"
+      if config.selected_device_name not in available_ports:
+        controller_label += " (non connesso)"
+    elif available_ports:
+      controller_label = f"Controller selezionato automaticamente: {available_ports[0]}"
 
     message_box = ""
     if message:
@@ -209,6 +217,39 @@ def _page_html(
       align-items: center;
       gap: 10px;
       margin-top: 14px;
+    }}
+    .controller-mode {{
+      display: grid;
+      gap: 10px;
+      margin-top: 14px;
+    }}
+    .controller-summary {{
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #fff;
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 0.95rem;
+    }}
+    .toggle-button {{
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      width: fit-content;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+    }}
+    .toggle-button input {{
+      width: 18px;
+      height: 18px;
+      margin: 0;
+    }}
+    .hidden {{
+      display: none !important;
     }}
     .grid {{
       display: grid;
@@ -308,11 +349,22 @@ def _page_html(
             <label for=\"auto_discover\" style=\"margin:0;\">Auto-discovery porte</label>
           </div>
 
-          <label for=\"selected_device_name\">Controller MIDI (selezione manuale)</label>
-          <select id=\"selected_device_name\" name=\"selected_device_name\">
-            {''.join(device_options)}
-          </select>
-          <p class=\"muted-line\">{html.escape(ports_status)}</p>
+          <div class=\"controller-mode\">
+            <label class=\"toggle-button\" for=\"controller_auto\">
+              <input id=\"controller_auto\" name=\"controller_auto\" type=\"checkbox\" {'checked' if not config.selected_device_name else ''}>
+              <span>Auto</span>
+            </label>
+
+            <div id=\"controller-summary\" class=\"controller-summary {'hidden' if config.selected_device_name else ''}\">{html.escape(controller_label)}</div>
+
+            <div id=\"controller-manual-block\" class={'hidden' if not config.selected_device_name else ''}>
+              <label for=\"selected_device_name\">Controller MIDI</label>
+              <select id=\"selected_device_name\" name=\"selected_device_name\">
+                {''.join(device_options)}
+              </select>
+              <p class=\"muted-line\">{html.escape(ports_status)}</p>
+            </div>
+          </div>
 
           <label for=\"device_name_hint\">Filtro nome dispositivo (substring)</label>
           <input id=\"device_name_hint\" name=\"device_name_hint\" type=\"text\" placeholder=\"es. keystation\" value=\"{escaped_hint}\">
@@ -325,10 +377,7 @@ def _page_html(
           {''.join(mapping_rows)}
 
           <label for=\"controller_octave\">Ottava controller usata (solo modalita ottava singola)</label>
-          <input id=\"controller_octave\" name=\"controller_octave\" type=\"number\" min=\"-1\" max=\"9\" step=\"1\" value=\"{config.controller_octave}\">
-
-          <label for=\"instrument_octave\">Ottava strumento (destinazione)</label>
-          <input id=\"instrument_octave\" name=\"instrument_octave\" type=\"number\" min=\"-1\" max=\"9\" step=\"1\" value=\"{config.instrument_octave}\">
+          <input id=\"controller_octave\" name=\"controller_octave\" type=\"number\" min=\"-1\" max=\"9\" step=\"1\" value=\"{config.controller_octave}\" {'disabled' if config.octave_mapping_mode != 'controller_octave' else ''}>
 
           <label for=\"instrument_start_note\">Nota di inizio dell'ottava strumento</label>
           <select id=\"instrument_start_note\" name=\"instrument_start_note\">
@@ -344,6 +393,37 @@ def _page_html(
     </form>
     <p class=\"hint\">File impostazioni: {escaped_settings_path}</p>
   </main>
+  <script>
+    (function () {{
+      const autoToggle = document.getElementById('controller_auto');
+      const summary = document.getElementById('controller-summary');
+      const manualBlock = document.getElementById('controller-manual-block');
+      const manualSelect = document.getElementById('selected_device_name');
+      const mappingRadios = Array.from(document.querySelectorAll('.mapping-mode-radio'));
+      const controllerOctaveInput = document.getElementById('controller_octave');
+
+      function refreshControllerUi() {{
+        const autoMode = autoToggle.checked;
+        summary.classList.toggle('hidden', !autoMode);
+        manualBlock.classList.toggle('hidden', autoMode);
+        if (manualSelect) {{
+          manualSelect.disabled = autoMode;
+        }}
+      }}
+
+      function refreshMappingUi() {{
+        const controllerModeSelected = mappingRadios.some((radio) => radio.checked && radio.value === 'controller_octave');
+        if (controllerOctaveInput) {{
+          controllerOctaveInput.disabled = !controllerModeSelected;
+        }}
+      }}
+
+      autoToggle.addEventListener('change', refreshControllerUi);
+      mappingRadios.forEach((radio) => radio.addEventListener('change', refreshMappingUi));
+      refreshControllerUi();
+      refreshMappingUi();
+    }})();
+  </script>
 </body>
 </html>
 """
@@ -375,8 +455,9 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
             form = parse_qs(payload, keep_blank_values=True)
 
             device_name_hint = (form.get("device_name_hint", [""])[0] or "").strip() or None
-            selected_device_name = (
-                (form.get("selected_device_name", [""])[0] or "").strip() or None
+            controller_auto = "controller_auto" in form
+            selected_device_name = None if controller_auto else (
+              (form.get("selected_device_name", [""])[0] or "").strip() or None
             )
 
             try:
@@ -399,8 +480,8 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
                     parsed = fallback
                 return max(min_value, min(max_value, parsed))
 
-            controller_octave = _to_int("controller_octave", 4, -1, 9)
-            instrument_octave = _to_int("instrument_octave", 4, -1, 9)
+            current_config = store.get()
+            controller_octave = _to_int("controller_octave", current_config.controller_octave, -1, 9)
             instrument_start_note = _to_int("instrument_start_note", 0, 0, 11)
             note_offset_semitones = _to_int("note_offset_semitones", 0, -24, 24)
 
@@ -412,7 +493,7 @@ def _build_handler(store: RuntimeSettingsStore) -> type[BaseHTTPRequestHandler]:
                     poll_interval_seconds=poll_interval_seconds,
                     octave_mapping_mode=octave_mapping_mode,
                     controller_octave=controller_octave,
-                    instrument_octave=instrument_octave,
+                    instrument_octave=current_config.instrument_octave,
                     instrument_start_note=instrument_start_note,
                     note_offset_semitones=note_offset_semitones,
                 )
